@@ -1,4 +1,0 @@
-pandas
-pandas-ta; python_version < "0"
-rich
-click
