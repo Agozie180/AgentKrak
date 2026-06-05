@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+from pathlib import Path
 import subprocess
 import time
 from collections.abc import Generator, Iterable
@@ -218,7 +219,10 @@ def _now_iso() -> str:
 
 
 def _kraken_command() -> list[str]:
-    configured = os.environ.get("KRAKEN_COMMAND", DEFAULT_KRAKEN_COMMAND)
+    configured = os.environ.get("KRAKEN_COMMAND")
+    if not configured and os.name == "nt" and Path("kraken.cmd").exists():
+        configured = "kraken.cmd"
+    configured = configured or DEFAULT_KRAKEN_COMMAND
     return shlex.split(configured, posix=os.name != "nt")
 
 

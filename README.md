@@ -24,6 +24,16 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/krakenfx/kraken-cli/releases/latest/download/kraken-cli-installer.sh | sh
 ```
 
+
+## Windows Same-Folder Setup
+If you are on Windows, build the Docker image once from this project folder:
+
+```powershell
+docker build -t agentkrak .
+python main.py doctor
+```
+
+The repo includes `kraken.cmd`, a local wrapper that lets AgentKrak call the Kraken CLI through Docker. That means `python main.py doctor`, `python main.py signals`, and `python main.py run` can work from this same folder without installing a native Windows `kraken.exe`.
 ## Docker Quick Start
 This is the recommended Windows path because Kraken CLI runs cleanly inside Ubuntu:
 
