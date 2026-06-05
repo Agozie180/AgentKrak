@@ -1,2 +1,15 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+
+# Logs
+*.log
+
+# Ignore bot project from parent workspace
+bot/
+
+# Misc
+data/*.sqlite3
