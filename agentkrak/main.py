@@ -17,7 +17,10 @@ from .config import (
     DEFAULT_INTERVAL,
     DEFAULT_PAIRS,
     DEFAULT_POLL_SECONDS,
+    MIN_CONFIDENCE,
     SIGNALS_LOG,
+    STOP_LOSS_PCT,
+    TAKE_PROFIT_PCT,
     TRADES_LOG,
 )
 from .fetcher import KrakenCLIError, _kraken_command, get_ohlcv, get_order_book, get_ticker, stream_prices
@@ -51,11 +54,25 @@ def health_check() -> None:
         ) from exc
 
 
-def analyze_pair(pair: str, interval: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def analyze_pair(
+    pair: str,
+    interval: str,
+    min_confidence: int = MIN_CONFIDENCE,
+    stop_loss_pct: float = STOP_LOSS_PCT,
+    take_profit_pct: float = TAKE_PROFIT_PCT,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     ticker = get_ticker(pair)
     order_book = get_order_book(pair)
     candles = add_indicators(get_ohlcv(pair, interval))
-    signal = generate_signal(pair, candles, ticker, order_book)
+    signal = generate_signal(
+        pair,
+        candles,
+        ticker,
+        order_book,
+        min_confidence=min_confidence,
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+    )
     log_signal(signal)
     price_row = {
         "pair": pair,
@@ -75,8 +92,20 @@ def cli() -> None:
 @click.option("--interval", default=DEFAULT_INTERVAL, show_default=True)
 @click.option("--capital", default=DEFAULT_INITIAL_CAPITAL, show_default=True, type=float)
 @click.option("--poll", default=DEFAULT_POLL_SECONDS, show_default=True, type=int)
+@click.option("--min-confidence", default=MIN_CONFIDENCE, show_default=True, type=click.IntRange(0, 100))
+@click.option("--stop-loss", default=STOP_LOSS_PCT, show_default=True, type=float)
+@click.option("--take-profit", default=TAKE_PROFIT_PCT, show_default=True, type=float)
 @click.option("--cycles", default=0, hidden=True, type=int)
-def run(pairs: str, interval: str, capital: float, poll: int, cycles: int) -> None:
+def run(
+    pairs: str,
+    interval: str,
+    capital: float,
+    poll: int,
+    min_confidence: int,
+    stop_loss: float,
+    take_profit: float,
+    cycles: int,
+) -> None:
     """Start fetch -> analyze -> signal -> paper trade -> dashboard loop."""
     health_check()
     pair_list = parse_pairs(pairs)
@@ -91,7 +120,13 @@ def run(pairs: str, interval: str, capital: float, poll: int, cycles: int) -> No
             cycle_prices = []
             for pair in pair_list:
                 try:
-                    price_row, signal = analyze_pair(pair, interval)
+                    price_row, signal = analyze_pair(
+                        pair,
+                        interval,
+                        min_confidence=min_confidence,
+                        stop_loss_pct=stop_loss,
+                        take_profit_pct=take_profit,
+                    )
                     cycle_prices.append(price_row)
                     latest_signals.append(signal)
                     trade_result = safe_handle_trade(trader, signal)
@@ -114,7 +149,16 @@ def run(pairs: str, interval: str, capital: float, poll: int, cycles: int) -> No
 @cli.command()
 @click.option("--pairs", default=",".join(DEFAULT_PAIRS), show_default=True)
 @click.option("--interval", default=DEFAULT_INTERVAL, show_default=True)
-def signals(pairs: str, interval: str) -> None:
+@click.option("--min-confidence", default=MIN_CONFIDENCE, show_default=True, type=click.IntRange(0, 100))
+@click.option("--stop-loss", default=STOP_LOSS_PCT, show_default=True, type=float)
+@click.option("--take-profit", default=TAKE_PROFIT_PCT, show_default=True, type=float)
+def signals(
+    pairs: str,
+    interval: str,
+    min_confidence: int,
+    stop_loss: float,
+    take_profit: float,
+) -> None:
     """Fetch, compute, print current signals, then exit."""
     health_check()
     price_rows = []
@@ -122,7 +166,13 @@ def signals(pairs: str, interval: str) -> None:
     errors = []
     for pair in parse_pairs(pairs):
         try:
-            price_row, signal = analyze_pair(pair, interval)
+            price_row, signal = analyze_pair(
+                pair,
+                interval,
+                min_confidence=min_confidence,
+                stop_loss_pct=stop_loss,
+                take_profit_pct=take_profit,
+            )
             price_rows.append(price_row)
             signal_rows.append(signal)
         except Exception as exc:

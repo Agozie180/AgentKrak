@@ -13,7 +13,13 @@ SIGNAL_FIELDS = [
     "current_price",
     "rsi",
     "signal",
+    "raw_signal",
     "confidence",
+    "min_confidence",
+    "tradable",
+    "stop_loss",
+    "take_profit",
+    "risk_reward",
     "conditions_met",
 ]
 

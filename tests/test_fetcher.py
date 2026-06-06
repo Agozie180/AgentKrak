@@ -82,3 +82,11 @@ def test_interval_and_pair_helpers_match_cli_expectations():
 def test_extract_ohlc_rows_rejects_empty_payload():
     with pytest.raises(fetcher.KrakenCLIError, match="did not contain candles"):
         fetcher._extract_ohlc_rows({"result": {"last": 1}})
+
+
+def test_api_error_message_detects_kraken_error_payloads():
+    assert fetcher._api_error_message({"error": ["EGeneral:Temporary lockout"]}) == (
+        "EGeneral:Temporary lockout"
+    )
+    assert fetcher._api_error_message({"success": False, "message": "rate limited"}) == "rate limited"
+    assert fetcher._api_error_message({"result": {"BTCUSD": {}}}) is None

@@ -12,14 +12,23 @@ from typing import Any
 
 import pandas as pd
 
-from .config import DEFAULT_KRAKEN_COMMAND
+from .config import (
+    DEFAULT_KRAKEN_COMMAND,
+    KRAKEN_BACKOFF_SECONDS,
+    KRAKEN_RETRIES,
+    KRAKEN_TIMEOUT_SECONDS,
+)
 
 
 class KrakenCLIError(RuntimeError):
     pass
 
 
-def run_kraken(args: list[str], retries: int = 2, timeout: int = 30) -> Any:
+def run_kraken(
+    args: list[str],
+    retries: int = KRAKEN_RETRIES,
+    timeout: int = KRAKEN_TIMEOUT_SECONDS,
+) -> Any:
     command = [*_kraken_command(), *args, "-o", "json"]
     last_error = ""
 
@@ -41,7 +50,7 @@ def run_kraken(args: list[str], retries: int = 2, timeout: int = 30) -> Any:
             last_error = f"Kraken CLI timed out after {timeout}s: {' '.join(command)}"
             if attempt == retries:
                 raise KrakenCLIError(last_error) from exc
-            time.sleep(1 + attempt)
+            time.sleep(_retry_delay(attempt))
             continue
 
         if completed.returncode != 0:
@@ -50,16 +59,27 @@ def run_kraken(args: list[str], retries: int = 2, timeout: int = 30) -> Any:
                 raise KrakenCLIError(
                     f"Kraken CLI command failed ({completed.returncode}): {last_error}"
                 )
-            time.sleep(1 + attempt)
+            time.sleep(_retry_delay(attempt))
             continue
 
         try:
-            return json.loads(completed.stdout)
+            payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             last_error = completed.stdout.strip()[:500]
             if attempt == retries:
                 raise KrakenCLIError(f"Kraken CLI returned malformed JSON: {last_error}") from exc
-            time.sleep(1 + attempt)
+            time.sleep(_retry_delay(attempt))
+            continue
+
+        api_error = _api_error_message(payload)
+        if api_error:
+            last_error = f"Kraken API error: {api_error}"
+            if attempt == retries:
+                raise KrakenCLIError(last_error)
+            time.sleep(_retry_delay(attempt))
+            continue
+
+        return payload
 
     raise KrakenCLIError(last_error or "Unknown Kraken CLI error")
 
@@ -216,6 +236,23 @@ def _price_from_level(level: Any) -> float:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _api_error_message(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    error = payload.get("error")
+    if isinstance(error, list) and error:
+        return "; ".join(str(item) for item in error)
+    if isinstance(error, str) and error:
+        return error
+    if payload.get("success") is False:
+        return str(payload.get("message") or "Kraken CLI API request failed")
+    return None
+
+
+def _retry_delay(attempt: int) -> float:
+    return KRAKEN_BACKOFF_SECONDS * (2**attempt)
 
 
 def _kraken_command() -> list[str]:

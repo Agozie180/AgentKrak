@@ -9,7 +9,19 @@ from .config import RISK_PER_TRADE, TRADES_LOG
 from .fetcher import KrakenCLIError, _spot_pair, run_kraken
 
 
-TRADE_FIELDS = ["timestamp", "pair", "action", "amount", "price", "pnl", "total_pnl", "win_rate"]
+TRADE_FIELDS = [
+    "timestamp",
+    "pair",
+    "action",
+    "amount",
+    "price",
+    "stop_loss",
+    "take_profit",
+    "risk_reward",
+    "pnl",
+    "total_pnl",
+    "win_rate",
+]
 
 
 @dataclass
@@ -22,9 +34,12 @@ class PaperTrader:
     losses: int = 0
     total_trades: int = 0
 
+    def __post_init__(self) -> None:
+        self._ensure_trade_log()
+
     def handle_signal(self, signal: dict[str, Any]) -> dict[str, Any] | None:
         action = signal["signal"]
-        if action not in {"BUY", "SELL"}:
+        if action not in {"BUY", "SELL"} or not signal.get("tradable", action in {"BUY", "SELL"}):
             return None
         if action == "BUY":
             return self.buy(signal)
@@ -91,19 +106,27 @@ class PaperTrader:
             "action": action,
             "amount": amount,
             "price": price,
+            "stop_loss": signal.get("stop_loss"),
+            "take_profit": signal.get("take_profit"),
+            "risk_reward": signal.get("risk_reward"),
             "pnl": round(pnl, 2),
             "total_pnl": summary["total_pnl"],
             "win_rate": summary["win_rate"],
         }
 
     def _log_trade(self, trade: dict[str, Any]) -> None:
-        path = Path(self.log_path)
-        write_header = not path.exists()
-        with path.open("a", newline="", encoding="utf-8") as handle:
+        self._ensure_trade_log()
+        with Path(self.log_path).open("a", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=TRADE_FIELDS)
-            if write_header:
-                writer.writeheader()
             writer.writerow({field: trade.get(field, "") for field in TRADE_FIELDS})
+
+    def _ensure_trade_log(self) -> None:
+        path = Path(self.log_path)
+        if path.exists():
+            return
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=TRADE_FIELDS)
+            writer.writeheader()
 
     def _run_paper_order(self, side: str, pair: str, amount: float) -> None:
         args = ["paper", side, _spot_pair(pair), str(amount)]

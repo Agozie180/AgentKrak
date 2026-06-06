@@ -5,6 +5,8 @@ from typing import Any
 
 import pandas as pd
 
+from .config import MIN_CONFIDENCE, STOP_LOSS_PCT, TAKE_PROFIT_PCT
+
 
 BUY = "BUY"
 SELL = "SELL"
@@ -16,6 +18,9 @@ def generate_signal(
     indicator_frame: pd.DataFrame,
     ticker: dict[str, Any],
     order_book: dict[str, Any],
+    min_confidence: int = MIN_CONFIDENCE,
+    stop_loss_pct: float = STOP_LOSS_PCT,
+    take_profit_pct: float = TAKE_PROFIT_PCT,
 ) -> dict[str, Any]:
     if len(indicator_frame) < 2:
         raise ValueError("At least two candles are required to generate a signal.")
@@ -49,15 +54,22 @@ def generate_signal(
     if spread_pct < 0.15:
         sell_conditions.append("Bid/ask spread below 0.15%")
 
+    raw_signal = HOLD
+    conditions = buy_conditions if len(buy_conditions) >= len(sell_conditions) else sell_conditions
     if len(buy_conditions) >= 3 and len(buy_conditions) >= len(sell_conditions):
-        signal = BUY
+        raw_signal = BUY
         conditions = buy_conditions
     elif len(sell_conditions) >= 3:
-        signal = SELL
+        raw_signal = SELL
         conditions = sell_conditions
-    else:
-        signal = HOLD
-        conditions = buy_conditions if len(buy_conditions) >= len(sell_conditions) else sell_conditions
+
+    confidence = min(len(conditions) * 20, 100)
+    tradable = raw_signal in {BUY, SELL} and confidence >= min_confidence
+    signal = raw_signal if tradable else HOLD
+    risk = _risk_levels(raw_signal, price, stop_loss_pct, take_profit_pct) if tradable else _empty_risk()
+
+    if raw_signal in {BUY, SELL} and not tradable:
+        conditions = [*conditions, f"Filtered below {min_confidence}% confidence threshold"]
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -65,9 +77,35 @@ def generate_signal(
         "current_price": round(price, 8),
         "rsi": round(float(current["rsi_14"]), 2),
         "signal": signal,
-        "confidence": min(len(conditions) * 20, 100),
+        "raw_signal": raw_signal,
+        "confidence": confidence,
+        "min_confidence": min_confidence,
+        "tradable": tradable,
         "conditions_met": conditions,
+        **risk,
     }
+
+
+def _risk_levels(signal: str, price: float, stop_loss_pct: float, take_profit_pct: float) -> dict[str, float | None]:
+    if signal == BUY:
+        stop_loss = price * (1 - stop_loss_pct)
+        take_profit = price * (1 + take_profit_pct)
+    elif signal == SELL:
+        stop_loss = price * (1 + stop_loss_pct)
+        take_profit = price * (1 - take_profit_pct)
+    else:
+        return _empty_risk()
+    risk_per_unit = abs(price - stop_loss)
+    reward_per_unit = abs(take_profit - price)
+    return {
+        "stop_loss": round(stop_loss, 8),
+        "take_profit": round(take_profit, 8),
+        "risk_reward": round(reward_per_unit / risk_per_unit, 2) if risk_per_unit else None,
+    }
+
+
+def _empty_risk() -> dict[str, None]:
+    return {"stop_loss": None, "take_profit": None, "risk_reward": None}
 
 
 def _crossed_above(left: pd.Series, right: pd.Series, candles: int = 2) -> bool:

@@ -9,8 +9,9 @@ Watch the demo on X or YouTube: [link]
 ## Features
 - Kraken CLI native data pipeline: ticker, OHLC, order book, WebSocket stream, and paper mode all flow through `kraken`.
 - Multi-confluence signal engine: RSI, EMA crossovers, MACD crossovers, Bollinger Bands, and spread quality.
-- Rich live dashboard: polished terminal UI with live prices, signals, confidence, errors, and paper PnL.
-- Paper trading simulation: 5% risk sizing, CSV trade logs, paper account auto-init retry.
+- Confidence thresholding: BUY/SELL ideas below the default 60% minimum are downgraded to HOLD and never traded.
+- Risk-managed paper trading: 5% risk sizing plus stop-loss, take-profit, and risk/reward levels on every actionable signal.
+- Rich live dashboard: polished terminal UI with live prices, signals, confidence, risk levels, errors, and paper PnL.
 - Competition-ready packaging: Docker support, doctor command, tests, demo script, and judging alignment docs.
 
 ## Prerequisites
@@ -33,7 +34,7 @@ docker build -t agentkrak .
 python main.py doctor
 ```
 
-The repo includes `kraken.cmd`, a local wrapper that lets AgentKrak call the Kraken CLI through Docker. That means `python main.py doctor`, `python main.py signals`, and `python main.py run` can work from this same folder without installing a native Windows `kraken.exe`.
+The repo includes `kraken.cmd`, a local wrapper that lets AgentKrak call the Kraken CLI through Docker. That means `python main.py doctor`, `python main.py signals`, and `python main.py run` can work from this same folder without installing a native Windows `kraken.exe`. If `doctor` says the Kraken command is missing, make sure Docker Desktop is running and that you are in the AgentKrak repo folder.
 ## Docker Quick Start
 This is the recommended Windows path because Kraken CLI runs cleanly inside Ubuntu:
 
@@ -58,9 +59,9 @@ python3 -m pytest tests
 ```bash
 pip install -r requirements.txt
 python main.py doctor
-python main.py signals
+python main.py signals --min-confidence 60
 python main.py stream --duration 60
-python main.py run --pairs BTC/USD,ETH/USD,SOL/USD --interval 1h --capital 1000 --poll 60
+python main.py run --pairs BTC/USD,ETH/USD,SOL/USD --interval 1h --capital 1000 --poll 60 --min-confidence 60 --stop-loss 0.02 --take-profit 0.04
 python main.py report
 ```
 
@@ -83,7 +84,12 @@ SELL requires three or more bearish conditions:
 - Close is at or above the upper Bollinger Band
 - Bid/ask spread is below 0.15%
 
-Confidence is `conditions_met * 20`, capped at 100.
+Confidence is `conditions_met * 20`, capped at 100. The default minimum confidence is 60%, so a BUY or SELL setup needs at least three matching factors before AgentKrak will show it as tradable or send it to paper trading. You can tune this with `--min-confidence`.
+
+Actionable BUY signals include stop-loss below entry and take-profit above entry. Actionable SELL signals invert those levels. Defaults are 2% stop-loss and 4% take-profit, producing a 2:1 reward/risk profile that can be tuned with `--stop-loss` and `--take-profit`.
+
+## Reliability
+Crypto APIs and CLI wrappers can be noisy under load, so AgentKrak wraps every Kraken CLI request with retries, timeouts, JSON validation, and Kraken error-payload detection. Failures are surfaced in the dashboard instead of crashing the live agent loop.
 
 ## Project Structure
 ```text

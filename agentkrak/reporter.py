@@ -72,19 +72,47 @@ def _signals_table(signals: list[dict[str, Any]]) -> Table:
     table.add_column("Signal")
     table.add_column("RSI", justify="right")
     table.add_column("Confidence", justify="right")
+    table.add_column("SL", justify="right")
+    table.add_column("TP", justify="right")
+    table.add_column("R:R", justify="right")
     table.add_column("Conditions")
     for signal in signals[-10:]:
         style = signal_style(str(signal.get("signal", "")))
+        signal_label = _signal_label(signal)
         table.add_row(
             str(signal.get("timestamp", ""))[:19],
             str(signal.get("pair", "")),
-            str(signal.get("signal", "")),
+            signal_label,
             f"{float(signal.get('rsi', 0)):.2f}",
             f"{int(signal.get('confidence', 0))}%",
+            _price_or_dash(signal.get("stop_loss")),
+            _price_or_dash(signal.get("take_profit")),
+            _ratio_or_dash(signal.get("risk_reward")),
             "; ".join(signal.get("conditions_met", [])),
             style=style,
         )
     return table
+
+
+def _signal_label(signal: dict[str, Any]) -> str:
+    current = str(signal.get("signal", ""))
+    raw = str(signal.get("raw_signal", current))
+    tradable = bool(signal.get("tradable", current in {"BUY", "SELL"}))
+    if raw in {"BUY", "SELL"} and current == "HOLD" and not tradable:
+        return f"HOLD ({raw} < threshold)"
+    return current
+
+
+def _price_or_dash(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    return f"{float(value):,.2f}"
+
+
+def _ratio_or_dash(value: Any) -> str:
+    if value in (None, ""):
+        return "-"
+    return f"{float(value):.2f}"
 
 
 def _trades_table(summary: dict[str, Any]) -> Table:
