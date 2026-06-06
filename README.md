@@ -63,6 +63,7 @@ python main.py signals --min-confidence 60
 python main.py stream --duration 60
 python main.py run --pairs BTC/USD,ETH/USD,SOL/USD --interval 1h --capital 1000 --poll 60 --min-confidence 60 --stop-loss 0.02 --take-profit 0.04
 python main.py report
+python -m pytest tests
 ```
 
 `pandas-ta` is listed as an optional competition dependency but skipped by default because it is unavailable in some package indexes and can fail on newer Python versions. AgentKrak computes the required RSI, EMA, MACD, and Bollinger Band indicators locally, so the app remains fully functional.
@@ -86,7 +87,7 @@ SELL requires three or more bearish conditions:
 
 Confidence is `conditions_met * 20`, capped at 100. The default minimum confidence is 60%, so a BUY or SELL setup needs at least three matching factors before AgentKrak will show it as tradable or send it to paper trading. You can tune this with `--min-confidence`.
 
-Actionable BUY signals include stop-loss below entry and take-profit above entry. Actionable SELL signals invert those levels. Defaults are 2% stop-loss and 4% take-profit, producing a 2:1 reward/risk profile that can be tuned with `--stop-loss` and `--take-profit`.
+Actionable BUY signals include stop-loss below entry and take-profit above entry. Actionable SELL signals invert those levels. Defaults are 2% stop-loss and 4% take-profit, producing a 2:1 reward/risk profile that can be tuned with `--stop-loss` and `--take-profit`. HOLD rows show `-` for SL/TP because no trade should be placed; filtered BUY/SELL candidates can still show candidate risk levels while remaining blocked from paper trading.
 
 ## Reliability
 Crypto APIs and CLI wrappers can be noisy under load, so AgentKrak wraps every Kraken CLI request with retries, timeouts, JSON validation, and Kraken error-payload detection. Failures are surfaced in the dashboard instead of crashing the live agent loop.

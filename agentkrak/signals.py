@@ -66,7 +66,11 @@ def generate_signal(
     confidence = min(len(conditions) * 20, 100)
     tradable = raw_signal in {BUY, SELL} and confidence >= min_confidence
     signal = raw_signal if tradable else HOLD
-    risk = _risk_levels(raw_signal, price, stop_loss_pct, take_profit_pct) if tradable else _empty_risk()
+    risk = (
+        _risk_levels(raw_signal, price, stop_loss_pct, take_profit_pct)
+        if raw_signal in {BUY, SELL}
+        else _empty_risk()
+    )
 
     if raw_signal in {BUY, SELL} and not tradable:
         conditions = [*conditions, f"Filtered below {min_confidence}% confidence threshold"]
@@ -81,6 +85,7 @@ def generate_signal(
         "confidence": confidence,
         "min_confidence": min_confidence,
         "tradable": tradable,
+        "risk_status": "active" if tradable else "candidate" if raw_signal in {BUY, SELL} else "none",
         "conditions_met": conditions,
         **risk,
     }

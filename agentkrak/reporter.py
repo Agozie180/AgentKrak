@@ -28,6 +28,7 @@ def build_dashboard(
         Panel(Text(_banner(), style="bold cyan"), border_style="cyan"),
         _price_table(prices),
         _signals_table(signals),
+        _conditions_panel(signals),
         _trades_table(trade_summary),
         _errors_panel(errors or []),
         Panel("Powered by Kraken CLI | Press Ctrl+C to stop", border_style="blue"),
@@ -66,21 +67,20 @@ def _price_table(prices: list[dict[str, Any]]) -> Table:
 
 
 def _signals_table(signals: list[dict[str, Any]]) -> Table:
-    table = Table(title="Latest Signals", expand=True)
-    table.add_column("Time")
-    table.add_column("Pair")
-    table.add_column("Signal")
-    table.add_column("RSI", justify="right")
-    table.add_column("Confidence", justify="right")
-    table.add_column("SL", justify="right")
-    table.add_column("TP", justify="right")
-    table.add_column("R:R", justify="right")
-    table.add_column("Conditions")
+    table = Table(title="Latest Signals", expand=True, show_lines=False)
+    table.add_column("Time", no_wrap=True, width=5)
+    table.add_column("Pair", no_wrap=True, width=7)
+    table.add_column("Signal", no_wrap=True, width=9)
+    table.add_column("RSI", justify="right", no_wrap=True, width=5)
+    table.add_column("Conf", justify="right", no_wrap=True, width=5)
+    table.add_column("SL", justify="right", no_wrap=True, width=9)
+    table.add_column("TP", justify="right", no_wrap=True, width=9)
+    table.add_column("R:R", justify="right", no_wrap=True, width=4)
     for signal in signals[-10:]:
         style = signal_style(str(signal.get("signal", "")))
         signal_label = _signal_label(signal)
         table.add_row(
-            str(signal.get("timestamp", ""))[:19],
+            _time_only(signal.get("timestamp")),
             str(signal.get("pair", "")),
             signal_label,
             f"{float(signal.get('rsi', 0)):.2f}",
@@ -88,10 +88,23 @@ def _signals_table(signals: list[dict[str, Any]]) -> Table:
             _price_or_dash(signal.get("stop_loss")),
             _price_or_dash(signal.get("take_profit")),
             _ratio_or_dash(signal.get("risk_reward")),
-            "; ".join(signal.get("conditions_met", [])),
             style=style,
         )
     return table
+
+
+def _conditions_panel(signals: list[dict[str, Any]]) -> Panel:
+    if not signals:
+        return Panel("No signal diagnostics yet", title="Signal Diagnostics", border_style="cyan")
+    lines = []
+    for signal in signals[-5:]:
+        pair = str(signal.get("pair", ""))
+        confidence = int(signal.get("confidence", 0))
+        threshold = int(signal.get("min_confidence", 0))
+        status = "TRADE" if signal.get("tradable") else "WATCH"
+        codes = _condition_codes(signal.get("conditions_met", []))
+        lines.append(f"{pair}: {status} | conf {confidence}% / min {threshold}% | {codes}")
+    return Panel("\n".join(lines), title="Signal Diagnostics", border_style="cyan")
 
 
 def _signal_label(signal: dict[str, Any]) -> str:
@@ -99,7 +112,7 @@ def _signal_label(signal: dict[str, Any]) -> str:
     raw = str(signal.get("raw_signal", current))
     tradable = bool(signal.get("tradable", current in {"BUY", "SELL"}))
     if raw in {"BUY", "SELL"} and current == "HOLD" and not tradable:
-        return f"HOLD ({raw} < threshold)"
+        return f"HOLD/{raw}"
     return current
 
 
@@ -113,6 +126,35 @@ def _ratio_or_dash(value: Any) -> str:
     if value in (None, ""):
         return "-"
     return f"{float(value):.2f}"
+
+
+def _time_only(value: Any) -> str:
+    text = str(value or "")
+    if "T" in text:
+        return text.split("T", 1)[1][:5]
+    return text[:5]
+
+
+def _condition_codes(conditions: Any) -> str:
+    codes = []
+    for condition in conditions or []:
+        text = str(condition)
+        lowered = text.lower()
+        if "filtered" in lowered:
+            codes.append("FILTER")
+        elif "rsi" in lowered:
+            codes.append("RSI")
+        elif "ema" in lowered:
+            codes.append("EMA")
+        elif "macd" in lowered:
+            codes.append("MACD")
+        elif "bollinger" in lowered:
+            codes.append("BB")
+        elif "spread" in lowered:
+            codes.append("SPREAD")
+        else:
+            codes.append(text[:10])
+    return ", ".join(codes) if codes else "-"
 
 
 def _trades_table(summary: dict[str, Any]) -> Table:

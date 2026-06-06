@@ -86,6 +86,9 @@ def test_threshold_filters_low_confidence_trade_to_hold():
     assert signal["signal"] == "HOLD"
     assert signal["confidence"] == 60
     assert signal["tradable"] is False
+    assert signal["risk_status"] == "candidate"
+    assert signal["stop_loss"] is not None
+    assert signal["take_profit"] is not None
     assert "Filtered below 80% confidence threshold" in signal["conditions_met"]
 
 
@@ -100,6 +103,7 @@ def test_buy_signal_includes_stop_loss_take_profit_and_risk_reward():
     )
 
     assert signal["tradable"] is True
+    assert signal["risk_status"] == "active"
     assert signal["stop_loss"] == 98.0
     assert signal["take_profit"] == 104.0
     assert signal["risk_reward"] == 2.0

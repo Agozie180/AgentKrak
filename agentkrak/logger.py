@@ -17,6 +17,7 @@ SIGNAL_FIELDS = [
     "confidence",
     "min_confidence",
     "tradable",
+    "risk_status",
     "stop_loss",
     "take_profit",
     "risk_reward",
