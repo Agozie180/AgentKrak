@@ -4,6 +4,7 @@ import importlib.metadata
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import time
 from typing import Any
@@ -17,7 +18,6 @@ from .config import (
     DEFAULT_INTERVAL,
     DEFAULT_PAIRS,
     DEFAULT_POLL_SECONDS,
-    MIN_CONFIDENCE,
     SIGNALS_LOG,
     STOP_LOSS_PCT,
     TAKE_PROFIT_PCT,
@@ -28,6 +28,7 @@ from .indicators import add_indicators
 from .logger import log_signal
 from .paper_trader import PaperTrader, read_trade_summary, safe_handle_trade
 from .reporter import build_dashboard, live_dashboard, print_dashboard
+from .sessions import current_session, session_summary
 from .signals import generate_signal
 
 
@@ -39,12 +40,30 @@ def parse_pairs(value: str) -> list[str]:
 
 
 def health_check() -> None:
+    command = _kraken_command()
+    if command and Path(command[0]).name.lower() == "kraken.cmd" and not _docker_ready():
+        raise click.ClickException(
+            "Kraken CLI health check failed.\n"
+            "AgentKrak is using the local kraken.cmd Docker wrapper, but Docker Desktop "
+            "is not reachable.\n\n"
+            "Start Docker Desktop, wait until the engine is running, then retry from the "
+            "AgentKrakRepo folder."
+        )
     try:
         get_ticker("BTC/USD")
     except KrakenCLIError as exc:
+        details = str(exc)
+        docker_hint = ""
+        if "dockerDesktopLinuxEngine" in details or "docker api" in details.lower():
+            docker_hint = (
+                "\n\nAgentKrak is using the local kraken.cmd Docker wrapper on Windows. "
+                "Start Docker Desktop, wait until it says the engine is running, then retry "
+                "from the AgentKrakRepo folder."
+            )
         raise click.ClickException(
             "Kraken CLI health check failed.\n"
-            f"{exc}\n\n"
+            f"{exc}"
+            f"{docker_hint}\n\n"
             "Install Kraken CLI, then retry:\n"
             "curl --proto '=https' --tlsv1.2 -LsSf "
             "https://github.com/krakenfx/kraken-cli/releases/latest/download/"
@@ -54,10 +73,29 @@ def health_check() -> None:
         ) from exc
 
 
+def _docker_ready() -> bool:
+    if os.name == "nt":
+        try:
+            completed = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq com.docker.backend.exe"],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=3,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+        return "com.docker.backend.exe" in completed.stdout.lower()
+    try:
+        return shutil.which("docker") is not None
+    except OSError:
+        return False
+
+
 def analyze_pair(
     pair: str,
     interval: str,
-    min_confidence: int = MIN_CONFIDENCE,
+    min_confidence: int | None = None,
     stop_loss_pct: float = STOP_LOSS_PCT,
     take_profit_pct: float = TAKE_PROFIT_PCT,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -92,7 +130,12 @@ def cli() -> None:
 @click.option("--interval", default=DEFAULT_INTERVAL, show_default=True)
 @click.option("--capital", default=DEFAULT_INITIAL_CAPITAL, show_default=True, type=float)
 @click.option("--poll", default=DEFAULT_POLL_SECONDS, show_default=True, type=int)
-@click.option("--min-confidence", default=MIN_CONFIDENCE, show_default=True, type=click.IntRange(0, 100))
+@click.option(
+    "--min-confidence",
+    default=None,
+    type=click.IntRange(0, 100),
+    help="Override the active UTC trading-session confidence threshold.",
+)
 @click.option("--stop-loss", default=STOP_LOSS_PCT, show_default=True, type=float)
 @click.option("--take-profit", default=TAKE_PROFIT_PCT, show_default=True, type=float)
 @click.option("--cycles", default=0, hidden=True, type=int)
@@ -101,7 +144,7 @@ def run(
     interval: str,
     capital: float,
     poll: int,
-    min_confidence: int,
+    min_confidence: int | None,
     stop_loss: float,
     take_profit: float,
     cycles: int,
@@ -149,13 +192,18 @@ def run(
 @cli.command()
 @click.option("--pairs", default=",".join(DEFAULT_PAIRS), show_default=True)
 @click.option("--interval", default=DEFAULT_INTERVAL, show_default=True)
-@click.option("--min-confidence", default=MIN_CONFIDENCE, show_default=True, type=click.IntRange(0, 100))
+@click.option(
+    "--min-confidence",
+    default=None,
+    type=click.IntRange(0, 100),
+    help="Override the active UTC trading-session confidence threshold.",
+)
 @click.option("--stop-loss", default=STOP_LOSS_PCT, show_default=True, type=float)
 @click.option("--take-profit", default=TAKE_PROFIT_PCT, show_default=True, type=float)
 def signals(
     pairs: str,
     interval: str,
-    min_confidence: int,
+    min_confidence: int | None,
     stop_loss: float,
     take_profit: float,
 ) -> None:
@@ -211,6 +259,13 @@ def doctor() -> None:
         "Python",
         "OK",
         f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+    )
+    session = current_session()
+    table.add_row(
+        "UTC session",
+        session.name,
+        session_summary(session),
+        style="magenta",
     )
     table.add_row(
         "Kraken command",

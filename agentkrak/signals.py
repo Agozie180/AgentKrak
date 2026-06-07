@@ -5,12 +5,14 @@ from typing import Any
 
 import pandas as pd
 
-from .config import MIN_CONFIDENCE, STOP_LOSS_PCT, TAKE_PROFIT_PCT
+from .config import STOP_LOSS_PCT, TAKE_PROFIT_PCT
+from .sessions import TradingSession, current_session
 
 
 BUY = "BUY"
 SELL = "SELL"
 HOLD = "HOLD"
+NO_TRADE = "NO TRADE"
 
 
 def generate_signal(
@@ -18,9 +20,10 @@ def generate_signal(
     indicator_frame: pd.DataFrame,
     ticker: dict[str, Any],
     order_book: dict[str, Any],
-    min_confidence: int = MIN_CONFIDENCE,
+    min_confidence: int | None = None,
     stop_loss_pct: float = STOP_LOSS_PCT,
     take_profit_pct: float = TAKE_PROFIT_PCT,
+    session: TradingSession | None = None,
 ) -> dict[str, Any]:
     if len(indicator_frame) < 2:
         raise ValueError("At least two candles are required to generate a signal.")
@@ -29,6 +32,10 @@ def generate_signal(
     previous = indicator_frame.iloc[-2]
     price = float(ticker.get("price") or current["close"])
     spread_pct = float(order_book.get("spread_pct", 999))
+    active_session = session or current_session()
+    effective_min_confidence = (
+        active_session.min_confidence if min_confidence is None else min_confidence
+    )
 
     buy_conditions = []
     if float(current["rsi_14"]) < 45 and float(current["rsi_14"]) > float(previous["rsi_14"]):
@@ -64,16 +71,21 @@ def generate_signal(
         conditions = sell_conditions
 
     confidence = min(len(conditions) * 20, 100)
-    tradable = raw_signal in {BUY, SELL} and confidence >= min_confidence
-    signal = raw_signal if tradable else HOLD
+    tradable = raw_signal in {BUY, SELL} and confidence >= effective_min_confidence
+    signal = raw_signal if tradable else NO_TRADE if raw_signal in {BUY, SELL} else HOLD
     risk = (
         _risk_levels(raw_signal, price, stop_loss_pct, take_profit_pct)
         if raw_signal in {BUY, SELL}
         else _empty_risk()
     )
 
+    no_trade_reason = ""
     if raw_signal in {BUY, SELL} and not tradable:
-        conditions = [*conditions, f"Filtered below {min_confidence}% confidence threshold"]
+        no_trade_reason = (
+            f"Confidence {confidence}% below {active_session.name} session threshold "
+            f"{effective_min_confidence}%"
+        )
+        conditions = [*conditions, no_trade_reason]
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -83,9 +95,13 @@ def generate_signal(
         "signal": signal,
         "raw_signal": raw_signal,
         "confidence": confidence,
-        "min_confidence": min_confidence,
+        "min_confidence": effective_min_confidence,
+        "session_name": active_session.name,
+        "session_min_confidence": active_session.min_confidence,
+        "session_note": active_session.note,
         "tradable": tradable,
         "risk_status": "active" if tradable else "candidate" if raw_signal in {BUY, SELL} else "none",
+        "no_trade_reason": no_trade_reason,
         "conditions_met": conditions,
         **risk,
     }

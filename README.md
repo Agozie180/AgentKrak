@@ -9,7 +9,8 @@ Watch the demo on X or YouTube: [link]
 ## Features
 - Kraken CLI native data pipeline: ticker, OHLC, order book, WebSocket stream, and paper mode all flow through `kraken`.
 - Multi-confluence signal engine: RSI, EMA crossovers, MACD crossovers, Bollinger Bands, and spread quality.
-- Confidence thresholding: BUY/SELL ideas below the default 60% minimum are downgraded to HOLD and never traded.
+- Confidence thresholding: BUY/SELL ideas below the active session minimum become `NO TRADE` and never reach paper execution.
+- UTC session-aware thresholds: Asian, London, New York, and Off-session filters automatically raise or lower the minimum confirmation requirement.
 - Risk-managed paper trading: 5% risk sizing plus stop-loss, take-profit, and risk/reward levels on every actionable signal.
 - Rich live dashboard: polished terminal UI with live prices, signals, confidence, risk levels, errors, and paper PnL.
 - Competition-ready packaging: Docker support, doctor command, tests, demo script, and judging alignment docs.
@@ -59,9 +60,9 @@ python3 -m pytest tests
 ```bash
 pip install -r requirements.txt
 python main.py doctor
-python main.py signals --min-confidence 60
+python main.py signals
 python main.py stream --duration 60
-python main.py run --pairs BTC/USD,ETH/USD,SOL/USD --interval 1h --capital 1000 --poll 60 --min-confidence 60 --stop-loss 0.02 --take-profit 0.04
+python main.py run --pairs BTC/USD,ETH/USD,SOL/USD --interval 1h --capital 1000 --poll 60 --stop-loss 0.02 --take-profit 0.04
 python main.py report
 python -m pytest tests
 ```
@@ -85,7 +86,17 @@ SELL requires three or more bearish conditions:
 - Close is at or above the upper Bollinger Band
 - Bid/ask spread is below 0.15%
 
-Confidence is `conditions_met * 20`, capped at 100. The default minimum confidence is 60%, so a BUY or SELL setup needs at least three matching factors before AgentKrak will show it as tradable or send it to paper trading. You can tune this with `--min-confidence`.
+Confidence is `conditions_met * 20`, capped at 100. AgentKrak automatically detects the current UTC trading session and applies that session's minimum confidence threshold before any paper trade can execute.
+
+## Trading Sessions
+AgentKrak uses session-aware confirmation filters:
+
+- Asian session, 23:00-06:00 UTC: minimum confidence 65%; trending moves, cleaner signals.
+- London session, 07:00-12:00 UTC: minimum confidence 72%; high volatility, false breaks possible.
+- New York session, 13:00-21:00 UTC: minimum confidence 75%; highest volume, needs strong confirmation.
+- Off session, 21:00-23:00 UTC plus transition gaps: minimum confidence 60%; low liquidity, trade carefully.
+
+Every dashboard, report, doctor output, and logged signal includes the active session name and threshold. If a BUY or SELL setup exists but confidence is below the active session threshold, AgentKrak shows `NO TRADE` with a clear reason and refuses to execute the paper order. Advanced users can still override the session threshold with `--min-confidence`.
 
 Actionable BUY signals include stop-loss below entry and take-profit above entry. Actionable SELL signals invert those levels. Defaults are 2% stop-loss and 4% take-profit, producing a 2:1 reward/risk profile that can be tuned with `--stop-loss` and `--take-profit`. HOLD rows show `-` for SL/TP because no trade should be placed; filtered BUY/SELL candidates can still show candidate risk levels while remaining blocked from paper trading.
 

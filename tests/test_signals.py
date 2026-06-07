@@ -72,24 +72,32 @@ def test_all_five_conditions_met_gives_100_confidence():
     assert len(signal["conditions_met"]) == 5
 
 
-def test_threshold_filters_low_confidence_trade_to_hold():
+def test_threshold_filters_low_confidence_trade_to_no_trade():
     data = frame(close=[100, 101, 102], bb_lower=[90, 90, 90])
+
+    class Session:
+        name = "Off"
+        min_confidence = 60
+        note = "low liquidity, trade carefully"
+
     signal = generate_signal(
         "BTC/USD",
         data,
         {"price": 102},
         {"spread_pct": 0.2},
         min_confidence=80,
+        session=Session(),
     )
 
     assert signal["raw_signal"] == "BUY"
-    assert signal["signal"] == "HOLD"
+    assert signal["signal"] == "NO TRADE"
     assert signal["confidence"] == 60
     assert signal["tradable"] is False
     assert signal["risk_status"] == "candidate"
     assert signal["stop_loss"] is not None
     assert signal["take_profit"] is not None
-    assert "Filtered below 80% confidence threshold" in signal["conditions_met"]
+    assert signal["no_trade_reason"] == "Confidence 60% below Off session threshold 80%"
+    assert signal["no_trade_reason"] in signal["conditions_met"]
 
 
 def test_buy_signal_includes_stop_loss_take_profit_and_risk_reward():
@@ -131,3 +139,20 @@ def test_sell_signal_risk_levels_are_inverted():
 
     assert signal["stop_loss"] == 102.0
     assert signal["take_profit"] == 96.0
+
+
+def test_signal_uses_session_threshold_when_no_override():
+    data = frame(close=[100, 101, 102], bb_lower=[90, 90, 90])
+
+    class Session:
+        name = "London"
+        min_confidence = 72
+        note = "high volatility, false breaks possible"
+
+    signal = generate_signal("BTC/USD", data, {"price": 102}, {"spread_pct": 0.2}, session=Session())
+
+    assert signal["signal"] == "NO TRADE"
+    assert signal["session_name"] == "London"
+    assert signal["session_min_confidence"] == 72
+    assert signal["min_confidence"] == 72
+    assert signal["no_trade_reason"] == "Confidence 60% below London session threshold 72%"

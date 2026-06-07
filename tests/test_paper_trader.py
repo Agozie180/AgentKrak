@@ -38,7 +38,7 @@ def test_paper_trader_ignores_non_tradable_filtered_signal(monkeypatch, tmp_path
         "timestamp": "2026-06-05T00:00:00+00:00",
         "pair": "BTC/USD",
         "current_price": 100.0,
-        "signal": "HOLD",
+        "signal": "NO TRADE",
         "raw_signal": "BUY",
         "confidence": 40,
         "tradable": False,

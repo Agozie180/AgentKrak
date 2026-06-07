@@ -30,6 +30,8 @@ def run_kraken(
     timeout: int = KRAKEN_TIMEOUT_SECONDS,
 ) -> Any:
     command = [*_kraken_command(), *args, "-o", "json"]
+    if _uses_local_docker_wrapper(command):
+        timeout = min(timeout, 8)
     last_error = ""
 
     for attempt in range(retries + 1):
@@ -48,13 +50,17 @@ def run_kraken(
             ) from exc
         except subprocess.TimeoutExpired as exc:
             last_error = f"Kraken CLI timed out after {timeout}s: {' '.join(command)}"
-            if attempt == retries:
+            if attempt == retries or _uses_local_docker_wrapper(command):
                 raise KrakenCLIError(last_error) from exc
             time.sleep(_retry_delay(attempt))
             continue
 
         if completed.returncode != 0:
             last_error = completed.stderr.strip() or completed.stdout.strip()
+            if _is_local_runtime_error(last_error):
+                raise KrakenCLIError(
+                    f"Kraken CLI command failed ({completed.returncode}): {last_error}"
+                )
             if attempt == retries:
                 raise KrakenCLIError(
                     f"Kraken CLI command failed ({completed.returncode}): {last_error}"
@@ -253,6 +259,15 @@ def _api_error_message(payload: Any) -> str | None:
 
 def _retry_delay(attempt: int) -> float:
     return KRAKEN_BACKOFF_SECONDS * (2**attempt)
+
+
+def _is_local_runtime_error(message: str) -> bool:
+    lowered = message.lower()
+    return "dockerdesktoplinuxengine" in lowered or "docker api" in lowered
+
+
+def _uses_local_docker_wrapper(command: list[str]) -> bool:
+    return bool(command) and Path(command[0]).name.lower() == "kraken.cmd"
 
 
 def _kraken_command() -> list[str]:

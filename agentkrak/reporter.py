@@ -9,13 +9,17 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from .sessions import current_session, session_summary
+
 
 UNICODE_BANNER = "⚡ AgentKrak v1.0 | Kraken CLI Trading Agent"
 ASCII_BANNER = "AgentKrak v1.0 | Kraken CLI Trading Agent"
 
 
 def signal_style(signal: str) -> str:
-    return {"BUY": "green", "SELL": "red", "HOLD": "yellow"}.get(signal, "white")
+    return {"BUY": "green", "SELL": "red", "HOLD": "yellow", "NO TRADE": "bright_black"}.get(
+        signal, "white"
+    )
 
 
 def build_dashboard(
@@ -26,6 +30,7 @@ def build_dashboard(
 ) -> Group:
     return Group(
         Panel(Text(_banner(), style="bold cyan"), border_style="cyan"),
+        _session_panel(),
         _price_table(prices),
         _signals_table(signals),
         _conditions_panel(signals),
@@ -66,6 +71,10 @@ def _price_table(prices: list[dict[str, Any]]) -> Table:
     return table
 
 
+def _session_panel() -> Panel:
+    return Panel(session_summary(current_session()), title="Active UTC Session", border_style="magenta")
+
+
 def _signals_table(signals: list[dict[str, Any]]) -> Table:
     table = Table(title="Latest Signals", expand=True, show_lines=False)
     table.add_column("Time", no_wrap=True, width=5)
@@ -101,9 +110,13 @@ def _conditions_panel(signals: list[dict[str, Any]]) -> Panel:
         pair = str(signal.get("pair", ""))
         confidence = int(signal.get("confidence", 0))
         threshold = int(signal.get("min_confidence", 0))
-        status = "TRADE" if signal.get("tradable") else "WATCH"
+        status = "TRADE" if signal.get("tradable") else "NO TRADE" if signal.get("signal") == "NO TRADE" else "WATCH"
+        session = str(signal.get("session_name", current_session().name))
+        threshold = int(signal.get("min_confidence", signal.get("session_min_confidence", 0)))
         codes = _condition_codes(signal.get("conditions_met", []))
-        lines.append(f"{pair}: {status} | conf {confidence}% / min {threshold}% | {codes}")
+        reason = str(signal.get("no_trade_reason") or "")
+        suffix = f" | {reason}" if reason else ""
+        lines.append(f"{pair}: {status} | {session} min {threshold}% | conf {confidence}% | {codes}{suffix}")
     return Panel("\n".join(lines), title="Signal Diagnostics", border_style="cyan")
 
 
@@ -111,8 +124,8 @@ def _signal_label(signal: dict[str, Any]) -> str:
     current = str(signal.get("signal", ""))
     raw = str(signal.get("raw_signal", current))
     tradable = bool(signal.get("tradable", current in {"BUY", "SELL"}))
-    if raw in {"BUY", "SELL"} and current == "HOLD" and not tradable:
-        return f"HOLD/{raw}"
+    if current == "NO TRADE" and raw in {"BUY", "SELL"} and not tradable:
+        return f"NO/{raw}"
     return current
 
 
@@ -140,7 +153,7 @@ def _condition_codes(conditions: Any) -> str:
     for condition in conditions or []:
         text = str(condition)
         lowered = text.lower()
-        if "filtered" in lowered:
+        if "confidence" in lowered and "below" in lowered:
             codes.append("FILTER")
         elif "rsi" in lowered:
             codes.append("RSI")
