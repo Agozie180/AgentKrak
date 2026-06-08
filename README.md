@@ -35,7 +35,7 @@ docker build -t agentkrak .
 python main.py doctor
 ```
 
-The repo includes `kraken.cmd`, a local wrapper that lets AgentKrak call the Kraken CLI through Docker. That means `python main.py doctor`, `python main.py signals`, and `python main.py run` can work from this same folder without installing a native Windows `kraken.exe`. If `doctor` says the Kraken command is missing, make sure Docker Desktop is running and that you are in the AgentKrak repo folder.
+The repo includes `kraken.cmd`, a local wrapper that lets AgentKrak call the Kraken CLI through Docker. That means `python main.py doctor`, `python main.py signals`, `python main.py stream`, and `python main.py run` can work from this same folder without installing a native Windows `kraken.exe`. If `doctor` says the Kraken command is missing or times out, make sure Docker Desktop is running and that you are in the AgentKrak repo folder. On the first run, Docker may need a few extra seconds to start the Kraken CLI container.
 ## Docker Quick Start
 This is the recommended Windows path because Kraken CLI runs cleanly inside Ubuntu:
 
@@ -102,6 +102,8 @@ Actionable BUY signals include stop-loss below entry and take-profit above entry
 
 ## Reliability
 Crypto APIs and CLI wrappers can be noisy under load, so AgentKrak wraps every Kraken CLI request with retries, timeouts, JSON validation, and Kraken error-payload detection. Failures are surfaced in the dashboard instead of crashing the live agent loop.
+
+`python main.py stream` uses `kraken ws ticker` and prints clean price ticks only. WebSocket status, heartbeat, and subscription control messages are filtered out so the demo shows readable live market data.
 
 ## Project Structure
 ```text

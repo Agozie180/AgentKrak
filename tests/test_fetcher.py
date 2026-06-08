@@ -90,3 +90,39 @@ def test_api_error_message_detects_kraken_error_payloads():
     )
     assert fetcher._api_error_message({"success": False, "message": "rate limited"}) == "rate limited"
     assert fetcher._api_error_message({"result": {"BTCUSD": {}}}) is None
+
+
+def test_normalize_stream_tick_filters_control_messages_and_flattens_ticker_data():
+    assert fetcher._normalize_stream_tick({"channel": "heartbeat"}) == []
+
+    ticks = fetcher._normalize_stream_tick(
+        {
+            "channel": "ticker",
+            "type": "snapshot",
+            "timestamp": "2026-06-08T11:08:04Z",
+            "data": [
+                {
+                    "symbol": "BTC/USD",
+                    "last": 63146.0,
+                    "bid": 63142.1,
+                    "ask": 63146.0,
+                    "change_pct": 1.21,
+                    "volume": 2450.62,
+                }
+            ],
+        }
+    )
+
+    assert ticks == [
+        {
+            "timestamp": "2026-06-08T11:08:04Z",
+            "pair": "BTC/USD",
+            "price": 63146.0,
+            "bid": 63142.1,
+            "ask": 63146.0,
+            "spread_pct": pytest.approx(0.00618),
+            "change_24h": 1.21,
+            "volume": 2450.62,
+            "type": "snapshot",
+        }
+    ]

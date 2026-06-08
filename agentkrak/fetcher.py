@@ -31,7 +31,7 @@ def run_kraken(
 ) -> Any:
     command = [*_kraken_command(), *args, "-o", "json"]
     if _uses_local_docker_wrapper(command):
-        timeout = min(timeout, 8)
+        timeout = min(timeout, 25)
     last_error = ""
 
     for attempt in range(retries + 1):
@@ -136,10 +136,11 @@ def stream_prices(pairs: Iterable[str], duration: int = 60) -> Generator[dict[st
         "ws",
         "ticker",
         *[_display_pair(pair) for pair in pairs],
+        "--snapshot",
+        "true",
         "-o",
         "json",
     ]
-    deadline = time.monotonic() + duration
     try:
         process = subprocess.Popen(
             command,
@@ -152,6 +153,7 @@ def stream_prices(pairs: Iterable[str], duration: int = 60) -> Generator[dict[st
             "Kraken CLI was not found. Install it before streaming or set KRAKEN_COMMAND."
         ) from exc
 
+    deadline = time.monotonic() + duration
     try:
         while time.monotonic() < deadline:
             if process.stdout is None:
@@ -168,9 +170,8 @@ def stream_prices(pairs: Iterable[str], duration: int = 60) -> Generator[dict[st
             except json.JSONDecodeError:
                 yield {"timestamp": _now_iso(), "error": f"Malformed stream JSON: {line.strip()}"}
                 continue
-            if isinstance(tick, dict):
-                tick.setdefault("timestamp", _now_iso())
-                yield tick
+            for normalized in _normalize_stream_tick(tick):
+                yield normalized
     finally:
         process.terminate()
         try:
@@ -238,6 +239,43 @@ def _price_from_level(level: Any) -> float:
     if isinstance(level, list) and level:
         return float(level[0])
     return 0.0
+
+
+def _normalize_stream_tick(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("channel") != "ticker":
+        return []
+
+    ticks = []
+    for item in payload.get("data") or []:
+        if not isinstance(item, dict):
+            continue
+        bid = _number_or_zero(item.get("bid"))
+        ask = _number_or_zero(item.get("ask"))
+        mid = (bid + ask) / 2 if bid and ask else 0.0
+        spread_pct = ((ask - bid) / mid * 100) if mid else 0.0
+        ticks.append(
+            {
+                "timestamp": payload.get("timestamp") or item.get("timestamp") or _now_iso(),
+                "pair": item.get("symbol", ""),
+                "price": _number_or_zero(item.get("last")),
+                "bid": bid,
+                "ask": ask,
+                "spread_pct": round(spread_pct, 5),
+                "change_24h": _number_or_zero(item.get("change_pct")),
+                "volume": _number_or_zero(item.get("volume")),
+                "type": payload.get("type", "update"),
+            }
+        )
+    return ticks
+
+
+def _number_or_zero(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _now_iso() -> str:
