@@ -4,7 +4,7 @@
 AgentKrak is a professional terminal trading agent that uses the Kraken CLI as its only market-data and paper-trading interface. It fetches live ticker, OHLC, order book, and WebSocket data; computes RSI, EMA, MACD, and Bollinger Bands; generates explainable BUY / SELL / HOLD decisions; and logs every signal and paper trade for review.
 
 ## Demo
-Watch the demo on X or YouTube: [link]
+Watch the demo on YouTube: https://youtu.be/VoOKGWCIZCk?si=ZuNaSUe578tiR1NF
 
 ## Features
 - Kraken CLI native data pipeline: ticker, OHLC, order book, WebSocket stream, and paper mode all flow through `kraken`.
